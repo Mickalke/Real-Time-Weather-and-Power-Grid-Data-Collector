@@ -1,6 +1,6 @@
-# Dokumentacja
+# Documentation
 
-| Plik | Zawartość |
+| File | Contents |
 |---|---|
-| [wyniki.md](wyniki.md) | Zrzuty ekranu z InfluxDB — dane zebrane po 7 dniach pracy systemu |
-| [screenshots/](screenshots/) | Pliki PNG z InfluxDB Data Explorer |
+| [wyniki.md](wyniki.md) | InfluxDB screenshots — data collected after 7 days of continuous operation |
+| [screenshots/](screenshots/) | PNG captures from InfluxDB Data Explorer |

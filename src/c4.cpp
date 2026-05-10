@@ -22,17 +22,17 @@ using json = nlohmann::json;
 using namespace std::chrono_literals;
 
 namespace config {
-// vpn 
+// VPN
 constexpr const char* MQTT_HOST = "10.255.150.118";
 constexpr int         MQTT_PORT = 1883;
 constexpr int         MQTT_KEEPALIVE = 60;
-constexpr const char* MQTT_CLIENT_ID = "Stanowisko_C4";
+constexpr const char* MQTT_CLIENT_ID = "Station_C4";
 
-// tematy
-constexpr const char* TOPIC_C2 = "projekt/pogoda/C4";  // C2 publikuje na ten temat
-constexpr const char* TOPIC_C3 = "projekt/energetyka/C3"; // C3 publikuje na ten temat
+// topics
+constexpr const char* TOPIC_C2 = "projekt/pogoda/C4";     // C2 publishes to this topic
+constexpr const char* TOPIC_C3 = "projekt/energetyka/C3"; // C3 publishes to this topic
 
-// InfluxDB lokalnie na vps 
+// InfluxDB on VPS (local)
 constexpr const char* INFLUX_URL = "http://127.0.0.1:8086/api/v2/write?org=d1088e241a11c9ce&bucket=pomiary&precision=ns";
 constexpr const char* INFLUX_TOKEN = "jAF2JbygOV6IIgJGx2n2o_k2R79s6OvfqhMLUBCj4PyrktkEQw4tlOtIdfqN938Gych6VzeqkVAcmQdFouoDAw==";
 
@@ -231,7 +231,7 @@ static std::string record_to_line_protocol(const DbRecord& record) {
 static bool send_to_influxdb(const std::string& payload) {
     CURL* curl = curl_easy_init();
     if (!curl) {
-        std::cerr << "[BLAD] Nie udalo sie zainicjalizowac CURL.\n";
+        std::cerr << "[ERROR] Failed to initialize CURL.\n";
         return false;
     }
 
@@ -255,22 +255,22 @@ static bool send_to_influxdb(const std::string& payload) {
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {
-        std::cerr << "[BLAD] InfluxDB CURL: " << curl_easy_strerror(res) << "\n";
+        std::cerr << "[ERROR] InfluxDB CURL: " << curl_easy_strerror(res) << "\n";
         return false;
     }
 
     if (status < 200 || status >= 300) {
-        std::cerr << "[BLAD] InfluxDB HTTP status: " << status << "\n";
+        std::cerr << "[ERROR] InfluxDB HTTP status: " << status << "\n";
         return false;
     }
 
-    std::cout << "[INFO] Zapisano paczke do InfluxDB.\n";
+    std::cout << "[INFO] Batch written to InfluxDB.\n";
     return true;
 }
 
 static void push_record(AppContext& ctx, DbRecord record) {
     if (record.fields.empty()) {
-        std::cerr << "[WARN] Pominieto rekord bez pol.\n";
+        std::cerr << "[WARN] Skipped record with no fields.\n";
         return;
     }
     if (record.timestamp_ns == 0) {
@@ -279,8 +279,8 @@ static void push_record(AppContext& ctx, DbRecord record) {
     ctx.db_fifo.push(std::move(record));
 }
 
-// Parser danych z C2.
-// C2 wysyla JSON: { "source": "C2", "ts": ...,
+// C2 message parser.
+// C2 sends JSON: { "source": "C2", "ts": ...,
 //   "averages": { "avg_temp", "avg_wind", "avg_solar", "n_samples" },
 //   "raw_data": [ { "lat", "lon", "temp", "wind", "solar", "description", "ts" }, ... ] }
 static void process_c2_message(AppContext& ctx, const RawMessage& msg) {
@@ -288,11 +288,11 @@ static void process_c2_message(AppContext& ctx, const RawMessage& msg) {
 
     long long base_ts = to_ns(msg.received_at);
     if (j.contains("ts") && j["ts"].is_number()) {
-        // C2 wysyla ts w sekundach (float) -> nanosekundy
+        // C2 sends ts in seconds (float) -> nanoseconds
         base_ts = static_cast<long long>(j["ts"].get<double>() * 1'000'000'000.0);
     }
 
-    // 1. Srednie obliczone przez C2 -> measurement "pogoda_srednie"
+    // 1. Averages computed by C2 -> measurement "pogoda_srednie"
     if (j.contains("averages") && j["averages"].is_object()) {
         const auto& avg = j["averages"];
         DbRecord rec;
@@ -303,23 +303,23 @@ static void process_c2_message(AppContext& ctx, const RawMessage& msg) {
         push_record(ctx, std::move(rec));
     }
 
-    // 2. Surowe pomiary -> measurement "pogoda_pomiary", osobny rekord per punkt
+    // 2. Raw measurements -> measurement "pogoda_pomiary", one record per point
     if (j.contains("raw_data") && j["raw_data"].is_array()) {
         for (const auto& item : j["raw_data"]) {
             DbRecord rec;
             rec.measurement = "pogoda_pomiary";
             rec.tags = {{"stanowisko", "C2"}};
 
-            // Tworzymy kopie, aby usunac z pol klucze uzyte jako tagi/ts
+            // Copy the item so we can remove keys used as tags/timestamp
             json fields_data = item;
 
-            // Wyciagamy reader_id jako tag
+            // Promote reader_id to a tag
             if (item.contains("reader_id") && item["reader_id"].is_number_integer()) {
                 rec.tags["reader_id"] = std::to_string(item["reader_id"].get<int>());
                 fields_data.erase("reader_id");
             }
 
-            // Uzyj lat/lon jako tagow jesli dostepne
+            // Use lat/lon as tags if available
             if (item.contains("lat") && item["lat"].is_number()) {
                 std::ostringstream lat_s;
                 lat_s << std::fixed << std::setprecision(2) << item["lat"].get<double>();
@@ -333,7 +333,7 @@ static void process_c2_message(AppContext& ctx, const RawMessage& msg) {
                 fields_data.erase("lon");
             }
 
-            // Timestamp z pomiaru lub bazowy
+            // Use per-measurement timestamp or fall back to base
             if (item.contains("ts") && item["ts"].is_number()) {
                 rec.timestamp_ns = static_cast<long long>(item["ts"].get<double>() * 1'000'000'000.0);
                 fields_data.erase("ts");
@@ -346,7 +346,7 @@ static void process_c2_message(AppContext& ctx, const RawMessage& msg) {
         }
     }
 
-    // 3. Fallback: jesli brak averages i raw_data, zrzuc calosc
+    // 3. Fallback: no averages or raw_data — dump the whole payload
     if (!j.contains("averages") && !j.contains("raw_data")) {
         DbRecord rec;
         rec.measurement = "pogoda_pomiary";
@@ -357,11 +357,11 @@ static void process_c2_message(AppContext& ctx, const RawMessage& msg) {
     }
 }
 
-// parser dla struktury JSON ze stanowiska C3
+// Parser for C3 station JSON
 static void process_c3_message(AppContext& ctx, const RawMessage& msg) {
     json j = json::parse(msg.payload);
 
-    // Uzyj timestampu z JSON (milisekundy -> nanosekundy), lub czasu odebrania
+    // Use JSON timestamp (milliseconds -> nanoseconds), or fall back to receive time
     long long ts_ns;
     if (j.contains("timestamp") && j["timestamp"].is_number()) {
         ts_ns = j["timestamp"].get<long long>() * 1'000'000LL;
@@ -371,7 +371,7 @@ static void process_c3_message(AppContext& ctx, const RawMessage& msg) {
 
     const auto& data = j.at("data");
 
-    // 1. Podsumowanie energetyki (generacja, zapotrzebowanie, czestotliwosc itp.)
+    // 1. Energy grid summary (generation, demand, frequency, etc.)
     if (data.contains("podsumowanie") && data["podsumowanie"].is_object()) {
         DbRecord rec;
         rec.measurement = "energetyka_podsumowanie";
@@ -381,7 +381,7 @@ static void process_c3_message(AppContext& ctx, const RawMessage& msg) {
         push_record(ctx, std::move(rec));
     }
 
-    // 2. Przesyly miedzynarodowe — osobny rekord per kraj, z id jako tagiem
+    // 2. Cross-border transfers — one record per country, id used as tag
     if (data.contains("przesyly") && data["przesyly"].is_array()) {
         for (const auto& item : data["przesyly"]) {
             DbRecord rec;
@@ -394,7 +394,7 @@ static void process_c3_message(AppContext& ctx, const RawMessage& msg) {
             rec.timestamp_ns = ts_ns;
 
             for (auto it = item.begin(); it != item.end(); ++it) {
-                if (it.key() == "id") continue;   // juz uzyty jako tag
+                if (it.key() == "id") continue;   // already used as tag
                 auto converted = json_value_to_influx_field(*it);
                 if (converted) {
                     rec.fields[it.key()] = *converted;
@@ -404,7 +404,7 @@ static void process_c3_message(AppContext& ctx, const RawMessage& msg) {
         }
     }
 
-    // 3. Status PSE w platformach bilansujacych
+    // 3. PSE status in balancing platforms
     if (data.contains("status_pse_w_platformach_bilansujacych") &&
         data["status_pse_w_platformach_bilansujacych"].is_object()) {
         DbRecord rec;
@@ -425,9 +425,9 @@ static void c2_reader_task(AppContext& ctx) {
         try {
             process_c2_message(ctx, msg);
         } catch (const json::parse_error& e) {
-            std::cerr << "[BLAD][C2] Nieprawidlowy JSON: " << e.what() << "\n";
+            std::cerr << "[ERROR][C2] Invalid JSON: " << e.what() << "\n";
         } catch (const std::exception& e) {
-            std::cerr << "[BLAD][C2] " << e.what() << "\n";
+            std::cerr << "[ERROR][C2] " << e.what() << "\n";
         }
     }
 }
@@ -441,9 +441,9 @@ static void c3_reader_task(AppContext& ctx) {
         try {
             process_c3_message(ctx, msg);
         } catch (const json::parse_error& e) {
-            std::cerr << "[BLAD][C3] Nieprawidlowy JSON: " << e.what() << "\n";
+            std::cerr << "[ERROR][C3] Invalid JSON: " << e.what() << "\n";
         } catch (const std::exception& e) {
-            std::cerr << "[BLAD][C3] " << e.what() << "\n";
+            std::cerr << "[ERROR][C3] " << e.what() << "\n";
         }
     }
 }
@@ -463,11 +463,11 @@ static void db_writer_task(AppContext& ctx) {
         }
 
         if (!send_to_influxdb(payload.str())) {
-            std::cerr << "[WARN] Nie udalo sie zapisac paczki. Rekordy zostaly utracone.\n";
+            std::cerr << "[WARN] Failed to write batch. Records lost.\n";
         }
     }
 
-    // Ostatnie oproznienie FIFO po zamknieciu aplikacji
+    // Final FIFO drain after shutdown
     while (!ctx.db_fifo.empty()) {
         auto batch = ctx.db_fifo.drain_all(config::MAX_BATCH_SIZE);
         if (batch.empty()) {
@@ -484,20 +484,20 @@ static void db_writer_task(AppContext& ctx) {
 
 static void on_connect(struct mosquitto* mosq, void* /*userdata*/, int rc) {
     if (rc != MOSQ_ERR_SUCCESS) {
-        std::cerr << "[BLAD] MQTT connect rc=" << rc << "\n";
+        std::cerr << "[ERROR] MQTT connect rc=" << rc << "\n";
         return;
     }
 
-    std::cout << "[INFO] Polaczono z brokerem MQTT.\n";
+    std::cout << "[INFO] Connected to MQTT broker.\n";
 
     int sub_rc = mosquitto_subscribe(mosq, nullptr, config::TOPIC_C2, 0);
     if (sub_rc != MOSQ_ERR_SUCCESS) {
-        std::cerr << "[BLAD] Subskrypcja C2 nieudana: " << mosquitto_strerror(sub_rc) << "\n";
+        std::cerr << "[ERROR] C2 subscription failed: " << mosquitto_strerror(sub_rc) << "\n";
     }
 
     sub_rc = mosquitto_subscribe(mosq, nullptr, config::TOPIC_C3, 0);
     if (sub_rc != MOSQ_ERR_SUCCESS) {
-        std::cerr << "[BLAD] Subskrypcja C3 nieudana: " << mosquitto_strerror(sub_rc) << "\n";
+        std::cerr << "[ERROR] C3 subscription failed: " << mosquitto_strerror(sub_rc) << "\n";
     }
 }
 
@@ -519,7 +519,7 @@ static void on_message(struct mosquitto* /*mosq*/, void* userdata, const struct 
     } else if (topic == config::TOPIC_C3) {
         ctx->c3_inbox.push(std::move(msg));
     } else {
-        std::cerr << "[WARN] Odebrano wiadomosc z nieobslugiwanego tematu: " << topic << "\n";
+        std::cerr << "[WARN] Message received on unhandled topic: " << topic << "\n";
     }
 }
 
@@ -538,7 +538,7 @@ int main() {
 
     mosquitto* mosq = mosquitto_new(config::MQTT_CLIENT_ID, true, &ctx);
     if (!mosq) {
-        std::cerr << "[BLAD] Nie udalo sie utworzyc klienta MQTT.\n";
+        std::cerr << "[ERROR] Failed to create MQTT client.\n";
         curl_global_cleanup();
         mosquitto_lib_cleanup();
         return 1;
@@ -551,10 +551,10 @@ int main() {
     std::thread c3_thread(c3_reader_task, std::ref(ctx));
     std::thread db_thread(db_writer_task, std::ref(ctx));
 
-    std::cout << "[INFO] Uruchamianie stanowiska C4...\n";
+    std::cout << "[INFO] Starting C4 station...\n";
     int rc = mosquitto_connect(mosq, config::MQTT_HOST, config::MQTT_PORT, config::MQTT_KEEPALIVE);
     if (rc != MOSQ_ERR_SUCCESS) {
-        std::cerr << "[BLAD] Polaczenie z MQTT nieudane: " << mosquitto_strerror(rc) << "\n";
+        std::cerr << "[ERROR] MQTT connection failed: " << mosquitto_strerror(rc) << "\n";
         g_running = false;
         ctx.c2_inbox.close();
         ctx.c3_inbox.close();
@@ -570,17 +570,17 @@ int main() {
 
     rc = mosquitto_loop_start(mosq);
     if (rc != MOSQ_ERR_SUCCESS) {
-        std::cerr << "[BLAD] Nie udalo sie uruchomic petli MQTT: " << mosquitto_strerror(rc) << "\n";
+        std::cerr << "[ERROR] Failed to start MQTT loop: " << mosquitto_strerror(rc) << "\n";
         g_running = false;
     }
 
-    std::cout << "[INFO] C4 pracuje. Oczekiwanie na dane z C2 i C3...\n";
+    std::cout << "[INFO] C4 running. Waiting for data from C2 and C3...\n";
 
     while (g_running) {
         std::this_thread::sleep_for(500ms);
     }
 
-    std::cout << "[INFO] Zamykanie aplikacji...\n";
+    std::cout << "[INFO] Shutting down...\n";
     mosquitto_loop_stop(mosq, true);
     mosquitto_disconnect(mosq);
 

@@ -1,25 +1,24 @@
-# PSCR — Projekt 2 — Stanowisko C4
+# PSCR — Project 2 — Station C4
 
-Projekt zaliczeniowy z przedmiotu **Programowanie Systemów Czasu Rzeczywistego**
-(AIR KSS, semestr 8). Aplikacja realizuje **stanowisko C4** w czteroosobowym
-systemie do długoterminowego logowania danych pogodowych oraz danych o pracy
-polskiej sieci energetycznej.
+Final project for **Real-Time Systems Programming** (Politechnika, semester 8).
+The application implements **station C4** in a four-person system for long-term
+logging of weather and Polish power grid data.
 
-## Architektura systemu (cała grupa)
+## System architecture (whole group)
 
 ```
 ┌──────────────────────┐     ┌──────────────────────┐
 │ C1 — openweathermap  │     │ C3 — pse.pl          │
 │ REST API             │     │ web scraping         │
-│ pogoda (siatka PL)   │     │ generacja, wymiana,  │
-│                      │     │ częstotliwość        │
+│ weather (PL grid)    │     │ generation, exchange,│
+│                      │     │ frequency            │
 └──────────┬───────────┘     └──────────┬───────────┘
            │                            │
            ▼                            │
 ┌──────────────────────┐                │
 │ C2                   │                │
-│ średnie pogody       │                │
-│ (mutex'y)            │                │
+│ weather averages     │                │
+│ (mutexes)            │                │
 └──────────┬───────────┘                │
            │                            │
            │  MQTT  ┌───────────────┐   │  MQTT
@@ -29,8 +28,8 @@ polskiej sieci energetycznej.
                             │ MQTT subscribe
                             ▼
                     ┌───────────────┐
-                    │ ► C4 ◄        │   ◄── to repozytorium
-                    │ FIFO + zapis  │
+                    │ ► C4 ◄        │   ◄── this repository
+                    │ FIFO + write  │
                     └───────┬───────┘
                             │ HTTP API
                             ▼
@@ -40,81 +39,83 @@ polskiej sieci energetycznej.
                     └───────────────┘
 ```
 
-System pracował ciągle przez ponad 7 dni, gromadząc dane pogodowe i energetyczne
-w bazie InfluxDB.
+The system ran continuously for over 7 days, collecting weather and energy data
+into InfluxDB.
 
-## Zadanie stanowiska C4
+## Station C4 responsibilities
 
-Stanowisko C4 odbiera dane z dwóch źródeł i zapisuje je do sieciowej bazy danych:
+Station C4 receives data from two sources and writes it to a networked database:
 
-- **odbiór ze stanowiska C2** — surowe pomiary pogodowe oraz wyliczone średnie
-  (temperatura, nasłonecznienie, wiatr) dla całej Polski,
-- **odbiór ze stanowiska C3** — dane o pracy KSE pobrane z `pse.pl`
-  (zapotrzebowanie na moc, generacja, wymiana z zagranicą, częstotliwość),
-- **kolejka FIFO** — bufor odbierający wiadomości z obu źródeł niezależnie,
-- **okresowy zapis do InfluxDB** — zadanie wyzwalane zegarem, opróżnia FIFO
-  i zapisuje wsadowo do bazy.
+- **from C2** — raw weather measurements and computed averages
+  (temperature, irradiance, wind speed) for Poland,
+- **from C3** — Polish National Power Grid (KSE) data scraped from `pse.pl`
+  (power demand, generation, cross-border exchange, frequency),
+- **FIFO queue** — buffer receiving messages from both sources independently,
+- **periodic InfluxDB flush** — timer-driven task that drains the FIFO
+  and writes data in batches.
 
-### Wątki i synchronizacja
+### Threads and synchronization
 
-| Wątek | Rola | Synchronizacja |
+| Thread | Role | Synchronization |
 |---|---|---|
-| Odbiór C2 | subskrypcja tematów MQTT z C2 | producent FIFO |
-| Odbiór C3 | subskrypcja tematów MQTT z C3 | producent FIFO |
-| Zapis do bazy | okresowy zrzut danych do InfluxDB | konsument FIFO, zegar |
+| C2 reader | MQTT subscription for C2 topics | FIFO producer |
+| C3 reader | MQTT subscription for C3 topics | FIFO producer |
+| DB writer | periodic InfluxDB flush | FIFO consumer, timer |
 
-Dostęp do FIFO chroniony mutexem, koordynacja producent–konsument przez
-zmienną warunkową.
+FIFO access is guarded by a mutex; producer–consumer coordination uses a
+condition variable.
 
-## Stos technologiczny
+## Technology stack
 
-- **Język:** C++ (standard C++17)
-- **MQTT:** Eclipse Paho MQTT C++
-- **InfluxDB:** komunikacja przez HTTP API (libcurl) z formatem Line Protocol
+- **Language:** C++ (C++17)
+- **MQTT:** Eclipse Mosquitto C client (`libmosquitto`)
+- **InfluxDB:** HTTP API via libcurl, Line Protocol format
 - **Build:** CMake
-- **Konteneryzacja infrastruktury:** Docker + Docker Compose
-- **System docelowy:** Linux (testowane na Ubuntu)
+- **Infrastructure containerization:** Docker + Docker Compose
+- **Target OS:** Linux (tested on Ubuntu)
 
-## Struktura repozytorium
+## Repository structure
 
 ```
 .
-├── src/                    # kod źródłowy aplikacji C4
-├── infra/                  # infrastruktura (broker MQTT + baza danych)
+├── src/                    # C4 application source code
+├── infra/                  # infrastructure (MQTT broker + database)
 │   ├── docker-compose.yml
 │   └── mosquitto/config/mosquitto.conf
-├── docs/                   # opis protokołu, schemat tematów MQTT, wykresy
-├── .env.example            # szablon zmiennych środowiskowych
+├── docs/                   # protocol description, MQTT topic diagram, charts
+│   ├── wyniki.md           # InfluxDB results from 7-day run
+│   └── screenshots/        # PNG captures from Data Explorer
+├── .env.example            # environment variable template
 ├── .gitignore
 └── README.md
 ```
 
-## Uruchomienie lokalne
+## Local setup
 
-### 1. Postaw infrastrukturę (Mosquitto + InfluxDB + MQTT Explorer)
+### 1. Start infrastructure (Mosquitto + InfluxDB + MQTT Explorer)
 
-Wymagany Docker Desktop (Windows/macOS) lub Docker Engine (Linux).
+Requires Docker Desktop (Windows/macOS) or Docker Engine (Linux).
 
 ```bash
 cd infra
-cp ../.env.example ../.env       # ustaw własne hasła!
+cp ../.env.example ../.env       # set your own passwords!
 docker compose up -d
 ```
 
-Po uruchomieniu dostępne są:
+After startup:
 
-| Usługa | Adres | Uwagi |
+| Service | Address | Notes |
 |---|---|---|
-| Mosquitto (MQTT) | `tcp://localhost:1883` | bez uwierzytelniania (tryb dev) |
-| InfluxDB UI | http://localhost:8086 | login z `.env` |
-| MQTT Explorer | http://localhost:4000 | login z `.env`, podgląd ruchu MQTT |
+| Mosquitto (MQTT) | `tcp://localhost:1883` | no auth (dev mode) |
+| InfluxDB UI | http://localhost:8086 | credentials from `.env` |
+| MQTT Explorer | http://localhost:4000 | credentials from `.env`, MQTT traffic viewer |
 
-InfluxDB inicjalizuje się przy pierwszym starcie i tworzy:
+InfluxDB initialises on first start and creates:
 
-- organizację: `politechnika`
+- org: `politechnika`
 - bucket: `dane_projektowe`
 
-### 2. Zbuduj aplikację C4
+### 2. Build the C4 application
 
 ```bash
 cd ..
@@ -123,68 +124,67 @@ cmake ..
 cmake --build .
 ```
 
-### 3. Uruchom
+### 3. Run
 
 ```bash
 ./c4 --mqtt-host=localhost --mqtt-port=1883 \
      --influx-url=http://localhost:8086 \
      --influx-org=politechnika \
      --influx-bucket=dane_projektowe \
-     --influx-token=<TOKEN_Z_INFLUX_UI>
+     --influx-token=<TOKEN_FROM_INFLUX_UI>
 ```
 
-Token wygeneruj w UI InfluxDB (zakładka *Load Data → API Tokens*).
+Generate the token in the InfluxDB UI (*Load Data → API Tokens*).
 
-## Format danych
+## Data format
 
-### Tematy MQTT (subskrybowane przez C4)
+### MQTT topics (subscribed by C4)
 
-| Temat | Źródło | Payload |
+| Topic | Source | Payload |
 |---|---|---|
-| `pogoda/raw/<id_komorki>` | C2 | surowy pomiar dla komórki siatki |
-| `pogoda/srednie` | C2 | średnie ogólnopolskie |
-| `energetyka/pse` | C3 | dane KSE (moc, generacja, wymiana, f) |
+| `projekt/pogoda/C4` | C2 | raw weather measurements + computed averages |
+| `projekt/energetyka/C3` | C3 | KSE data (power, generation, exchange, frequency) |
 
-Payload JSON, kodowanie UTF-8.
+Payload: JSON, UTF-8 encoding.
 
-### Schemat zapisu w InfluxDB (Line Protocol)
+### InfluxDB schema (Line Protocol)
 
 ```
-pogoda_raw,cell=<id>     temp=...,wind=...,sun=...     <ts>
-pogoda_srednia           temp=...,wind=...,sun=...     <ts>
-energetyka_pse,zrodlo=.. moc=...,wymiana=...,freq=...  <ts>
+pogoda_pomiary,stanowisko=C2,lat=..,lon=..  temp=...,wind=...,solar=...  <ts>
+pogoda_srednie,stanowisko=C2,kraj=Polska    avg_temp=...,avg_wind=...    <ts>
+energetyka_podsumowanie,stanowisko=C3       generacja=...,czestotliwosc= <ts>
+energetyka_przesyly,kierunek=DE             wartosclac=...,wartosclac_plan=... <ts>
+energetyka_status_pse,stanowisko=C3         ...                          <ts>
 ```
 
-## Wymagania środowiskowe
+## Build requirements
 
-Do budowy aplikacji:
-
-- kompilator C++17 (g++ ≥ 9, clang ≥ 10)
+- C++17 compiler (g++ ≥ 9, clang ≥ 10)
 - CMake ≥ 3.16
-- biblioteki: `libpaho-mqttpp3-dev`, `libpaho-mqtt3as`, `libcurl4-openssl-dev`, `nlohmann-json3-dev`
+- libraries: `libmosquitto-dev`, `libcurl4-openssl-dev`, `nlohmann-json3-dev`
 
-Do uruchomienia infrastruktury:
+Infrastructure:
 
 - Docker ≥ 24
 - Docker Compose v2
 
-## Kontekst projektu (cała grupa)
+## Project context (whole group)
 
-| Stanowisko | Zadanie | Realizujący |
+| Station | Task | Implemented by |
 |---|---|---|
-| C1 | odczyt pogody z openweathermap.org / open-meteo.com (REST + zegary + semafory, ≥10 zadań odczytu) | — |
-| C2 | uśrednianie danych pogodowych dla całej Polski (mutex'y) | — |
-| C3 | web scraping pse.pl (semafor + zegar) | — |
-| **C4** | **odbiór C2+C3, FIFO, zapis do bazy sieciowej** | **ten projekt** |
+| C1 | weather data from openweathermap.org (REST + timers + semaphores, ≥10 reader tasks) | — |
+| C2 | weather averaging across Poland (mutexes) | — |
+| C3 | pse.pl web scraping (semaphore + timer) | — |
+| **C4** | **receive C2+C3, FIFO, write to networked DB** | **this project** |
 
-Wymagania ogólne projektu:
+General project requirements:
 
-- praca ciągła ≥ 7 dni,
-- protokół komunikacji: standard (MQTT — wybrany w grupie),
-- całość w C/C++,
-- łączność stanowisk przez wspólną sieć (na produkcji: VPS DigitalOcean
-  z brokerem i bazą; lokalnie: ten `docker-compose.yml`).
+- continuous operation ≥ 7 days,
+- standard communication protocol (MQTT — agreed by the group),
+- entire implementation in C/C++,
+- stations connected via shared network (production: DigitalOcean VPS with
+  broker and database; local: this `docker-compose.yml`).
 
-## Licencja
+## License
 
-Projekt akademicki — do celów dydaktycznych.
+Academic project — for educational purposes.
