@@ -1,7 +1,7 @@
 # PSCR — Projekt 2 — Stanowisko C4
 
 Projekt zaliczeniowy z przedmiotu **Programowanie Systemów Czasu Rzeczywistego**
-(Politechnika, semestr 8). Aplikacja realizuje **stanowisko C4** w czteroosobowym
+(AIR KSS, semestr 8). Aplikacja realizuje **stanowisko C4** w czteroosobowym
 systemie do długoterminowego logowania danych pogodowych oraz danych o pracy
 polskiej sieci energetycznej.
 
