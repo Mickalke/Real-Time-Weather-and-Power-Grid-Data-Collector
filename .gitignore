@@ -1,0 +1,30 @@
+# Sekrety - NIGDY nie commitować
+.env
+*.key
+*.pem
+
+# Build artefacts
+build/
+out/
+cmake-build-*/
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.exe
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Docker volumes (gdyby ktoś przez przypadek wygenerował lokalnie)
+infra/data/

@@ -1,0 +1,51 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config:ro
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-log:/mosquitto/log
+
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_USER:-admin}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_PASSWORD:-changeme}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG:-politechnika}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET:-dane_projektowe}
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
+
+  mqtt-explorer:
+    image: smeagolworms4/mqtt-explorer:latest
+    container_name: mqtt-explorer
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      HTTP_USER: ${EXPLORER_USER:-admin}
+      HTTP_PASSWORD: ${EXPLORER_PASSWORD:-admin}
+      HTTP_PORT: 4000
+      CONFIG_PATH: /mqtt-explorer/config
+    volumes:
+      - mqtt-explorer-config:/mqtt-explorer/config
+    depends_on:
+      - mosquitto
+
+volumes:
+  mosquitto-data:
+  mosquitto-log:
+  influxdb-data:
+  influxdb-config:
+  mqtt-explorer-config:
