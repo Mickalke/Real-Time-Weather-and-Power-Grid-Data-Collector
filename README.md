@@ -1,8 +1,9 @@
-# PSCR — Project 2 — Station C4
+# C4 — Real-Time Weather & Power Grid Data Collector
 
 Final project for **Real-Time Systems Programming** (Politechnika, semester 8).
-The application implements **station C4** in a four-person system for long-term
-logging of weather and Polish power grid data.
+Station C4 continuously collects weather measurements and Polish power grid
+(KSE) data from two MQTT sources and stores them in an InfluxDB time-series
+database for long-term analysis.
 
 ## System architecture (whole group)
 
