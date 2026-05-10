@@ -1,17 +1,29 @@
 # Kod źródłowy aplikacji C4
 
-Wrzuć tutaj źródła swojej aplikacji C++ (`.cpp`, `.hpp`) oraz `CMakeLists.txt`.
+## Pliki
 
-Sugerowana struktura:
+| Plik | Opis |
+|---|---|
+| `c4.cpp` | Główny plik aplikacji — subskrypcja MQTT (C2+C3), kolejka FIFO, zapis do InfluxDB |
 
+## Budowanie
+
+```bash
+g++ -std=c++17 -O2 c4.cpp -o c4 \
+    -lmosquitto -lcurl \
+    $(pkg-config --cflags nlohmann_json)
 ```
-src/
-├── CMakeLists.txt
-├── main.cpp
-├── mqtt/           # subskrybenci C2 i C3
-├── fifo/           # kolejka FIFO + synchronizacja
-└── influx/         # klient HTTP do InfluxDB Line Protocol
+
+Lub przez CMake (jeśli dostępny `CMakeLists.txt`):
+
+```bash
+mkdir build && cd build
+cmake ..
+cmake --build .
 ```
 
-Po dodaniu kodu zaktualizuj `README.md` w katalogu głównym o ewentualne
-zmiany w sekcji *Uruchomienie* / *Wymagania*.
+## Zależności
+
+- `libmosquitto-dev` — klient MQTT (Eclipse Mosquitto C)
+- `libcurl4-openssl-dev` — HTTP do InfluxDB API
+- `nlohmann/json` — parsowanie JSON (header-only)
