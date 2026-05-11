@@ -1,6 +1,6 @@
 # C4 — Real-Time Weather & Power Grid Data Collector
 
-Final project for **Real-Time Systems Programming** (Politechnika, semester 8).
+Final project for **Real-Time Systems Programming** (AGH EAIiIB AiR KSS, semester 8).
 Station C4 continuously collects weather measurements and Polish power grid
 (KSE) data from two MQTT sources and stores them in an InfluxDB time-series
 database for long-term analysis.
